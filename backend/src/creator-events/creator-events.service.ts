@@ -10,6 +10,16 @@ import {
 } from '../contract/contract.service';
 import { CreatorEvent } from '../matches/entities/creator-event.entity';
 import {
+  EventByCodeResponseDto,
+  MatchPreviewDto,
+} from './dto/event-by-code-response.dto';
+import {
+  ListMatchesQueryDto,
+  MatchSortBy,
+  MatchStatus,
+  SortOrder,
+} from './dto/list-matches-query.dto';
+import {
   ListParticipantsQueryDto,
   ParticipantSortBy,
   SortOrder as ParticipantSortOrder,
@@ -23,6 +33,7 @@ import {
   SearchEventsResponseDto,
   SearchHighlightsDto,
 } from './dto/search-events-response.dto';
+import { UserScoreResponseDto } from './dto/user-score-response.dto';
 
 export interface EnrichedEvent extends ContractEvent {
   matchCount: number;

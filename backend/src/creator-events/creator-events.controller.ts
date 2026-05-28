@@ -21,9 +21,12 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Public } from '../common/decorators/public.decorator';
 import { CreatorEventsService } from './creator-events.service';
+import { EventByCodeResponseDto } from './dto/event-by-code-response.dto';
+import { ListMatchesQueryDto } from './dto/list-matches-query.dto';
 import { ListParticipantsQueryDto } from './dto/list-participants-query.dto';
 import { SearchEventsQueryDto } from './dto/search-events-query.dto';
 import { SearchEventsResponseDto } from './dto/search-events-response.dto';
+import { UserScoreResponseDto } from './dto/user-score-response.dto';
 
 @ApiTags('creator-events')
 @Controller('creator-events')

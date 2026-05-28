@@ -11,7 +11,11 @@ import { CreatorEventsService } from './creator-events.service';
 
 @Module({
   imports: [ContractModule, TypeOrmModule.forFeature([CreatorEvent])],
-  controllers: [CreatorEventsController, AdminCreatorEventsController],
+  controllers: [
+    CreatorEventsController,
+    PublicCreatorEventsController,
+    AdminCreatorEventsController,
+  ],
   providers: [CreatorEventsService],
 })
 export class CreatorEventsModule {}
