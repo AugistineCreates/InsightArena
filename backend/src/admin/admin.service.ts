@@ -24,11 +24,13 @@ import { Prediction } from '../predictions/entities/prediction.entity';
 import { SorobanService } from '../soroban/soroban.service';
 import { User } from '../users/entities/user.entity';
 import { CreatorEvent } from '../matches/entities/creator-event.entity';
+import { VerifiedAddress } from './entities/verified-address.entity';
 import { FeeHistory } from '../indexer/entities/fee-history.entity';
 import { ActivityLogQueryDto } from './dto/activity-log-query.dto';
 import { DateRangeQueryDto } from './dto/date-range-query.dto';
 import { FeeStatsResponseDto } from './dto/fee-stats-response.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
+import { ListVerifiedAddressesQueryDto } from './dto/list-verified-addresses-query.dto';
 import {
   ReportFormat,
   ReportQueryDto,
@@ -61,8 +63,11 @@ export class AdminService {
     private readonly flagsRepository: Repository<Flag>,
     @InjectRepository(CreatorEvent)
     private readonly creatorEventRepository: Repository<CreatorEvent>,
+    @InjectRepository(VerifiedAddress)
+    private readonly verifiedAddressesRepository: Repository<VerifiedAddress>,
     @InjectRepository(FeeHistory)
     private readonly feeHistoryRepository: Repository<FeeHistory>,
+
     private readonly analyticsService: AnalyticsService,
     private readonly notificationsService: NotificationsService,
     private readonly sorobanService: SorobanService,
@@ -250,6 +255,36 @@ export class AdminService {
     };
   }
 
+  async listVerifiedAddresses(query: ListVerifiedAddressesQueryDto) {
+    const { page = 1, limit = 20, search } = query;
+    const skip = (page - 1) * limit;
+
+    const qb = this.verifiedAddressesRepository.createQueryBuilder('v');
+
+    if (search) {
+      qb.where('v.address ILIKE :search', { search: `%${search}%` });
+    }
+
+    qb.orderBy('v.verified_at', 'DESC').skip(skip).take(limit);
+
+    const [addresses, total] = await qb.getManyAndCount();
+
+    const data = addresses.map((a) => ({
+      address: a.address,
+      verified_at: a.verified_at.toISOString(),
+      verified_by: a.verified_by,
+      events_created: a.events_created,
+    }));
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
   async banUser(id: string, reason: string, adminId: string): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
@@ -416,8 +451,8 @@ export class AdminService {
     await Promise.all(
       predictions.map((p) =>
         this.notificationsService.create(
-          p.user.id,
-          NotificationType.MarketResolved,
+          p.user.stellar_address,
+          NotificationType.MatchResolved,
           'Market Resolved',
           `The market "${market.title}" has been resolved. Winning outcome: ${dto.resolved_outcome}.`,
           {
@@ -525,8 +560,8 @@ export class AdminService {
     await Promise.all(
       participants.map((participant) =>
         this.notificationsService.create(
-          participant.user_id,
-          NotificationType.System,
+          participant.user.stellar_address,
+          NotificationType.EventCancelled,
           'Competition Cancelled',
           `The competition "${competition.title}" has been cancelled by an administrator.${
             shouldRefund ? ' Any applicable refunds have been initiated.' : ''
@@ -712,5 +747,108 @@ export class AdminService {
     }
 
     return reportData;
+  }
+
+  async listCreatorEventsForModeration(query: {
+    status?: string;
+    creator?: string;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: 'ASC' | 'DESC';
+  }) {
+    const {
+      status = 'all',
+      creator,
+      page = 1,
+      limit = 20,
+      sortBy = 'created_at',
+      sortOrder = 'DESC',
+    } = query;
+
+    const skip = (page - 1) * limit;
+    const take = Math.min(limit, 100);
+
+    const qb = this.creatorEventRepository.createQueryBuilder('event');
+    qb.leftJoinAndSelect('event.matches', 'matches');
+
+    // Filter by status
+    if (status !== 'all') {
+      if (status === 'active') {
+        qb.andWhere('event.is_cancelled = false AND event.is_active = true');
+      } else if (status === 'cancelled') {
+        qb.andWhere('event.is_cancelled = true');
+      } else if (status === 'completed') {
+        qb.andWhere('event.is_active = false');
+      } else if (status === 'flagged') {
+        qb.leftJoinAndSelect('event.flags', 'flags');
+        qb.andWhere('flags.id IS NOT NULL');
+      }
+    }
+
+    // Filter by creator
+    if (creator) {
+      qb.andWhere('event.creator_address = :creator', {
+        creator: creator,
+      });
+    }
+
+    // Count total before pagination
+    const total = await qb.getCount();
+
+    // Apply sorting and pagination
+    qb.orderBy(`event.${sortBy}`, sortOrder).skip(skip).take(take);
+
+    const events = await qb.getMany();
+
+    // Enrich events with additional data
+    const enrichedEvents = await Promise.all(
+      events.map(async (event) => {
+        const participantCount = event.participant_count || 0;
+        const matchCount = event.match_count || 0;
+
+        // Get creator user info
+        const creatorUser = await this.usersRepository.findOne({
+          where: { stellar_address: event.creator_address },
+        });
+
+        // Get flags for this event (if any)
+        const flags: any[] = [];
+
+        // Get admin actions for this event
+        const adminActions: any[] = [];
+
+        return {
+          id: event.id,
+          title: event.title,
+          description: event.description,
+          status: event.is_cancelled
+            ? 'cancelled'
+            : event.is_active
+              ? 'active'
+              : 'completed',
+          creator: {
+            id: creatorUser?.id || '',
+            stellar_address: event.creator_address,
+            username: creatorUser?.username,
+            avatar_url: creatorUser?.avatar_url,
+            is_verified: creatorUser?.role === 'admin' || false,
+          },
+          participant_count: participantCount,
+          match_count: matchCount,
+          flags,
+          admin_actions: adminActions,
+          created_at: event.created_at.toISOString(),
+          updated_at: event.created_at.toISOString(),
+        };
+      }),
+    );
+
+    return {
+      data: enrichedEvents,
+      total,
+      page: page,
+      limit: take,
+    };
   }
 }

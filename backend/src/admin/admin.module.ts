@@ -14,6 +14,7 @@ import { CreatorEvent } from '../matches/entities/creator-event.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { Prediction } from '../predictions/entities/prediction.entity';
 import { User } from '../users/entities/user.entity';
+import { VerifiedAddress } from './entities/verified-address.entity';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
 
@@ -29,6 +30,7 @@ import { AdminService } from './admin.service';
       ActivityLog,
       Flag,
       CreatorEvent,
+      VerifiedAddress,
       FeeHistory,
     ]),
     AnalyticsModule,

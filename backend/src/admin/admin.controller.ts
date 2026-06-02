@@ -1,3 +1,4 @@
+import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -10,10 +11,9 @@ import {
   Request,
   UseGuards,
   UseInterceptors,
-  Response as ExpressResponse,
+  Res,
 } from '@nestjs/common';
-import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
-import { ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
@@ -27,11 +27,15 @@ import { BanUserDto } from './dto/ban-user.dto';
 import { DateRangeQueryDto } from './dto/date-range-query.dto';
 import { FeeStatsResponseDto } from './dto/fee-stats-response.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
+import { ListVerifiedAddressesQueryDto } from './dto/list-verified-addresses-query.dto';
+import { ListCreatorEventsQueryDto } from './dto/list-creator-events-query.dto';
 import { ModerateCommentDto } from './dto/moderate-comment.dto';
 import { ReportQueryDto, ReportFormat } from './dto/report-query.dto';
 import { ResolveMarketDto } from './dto/resolve-market.dto';
 import { StatsResponseDto } from './dto/stats-response.dto';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto';
+
+type RequestUser = Request & { user: { id: string } };
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -73,7 +77,10 @@ export class AdminController {
     description: 'Competition cannot be cancelled',
   })
   @ApiResponse({ status: 502, description: 'Refund process failed' })
-  async cancelCompetition(@Param('id') id: string, @Request() req: any) {
+  async cancelCompetition(
+    @Param('id') id: string,
+    @Request() req: RequestUser,
+  ) {
     return this.adminService.adminCancelCompetition(
       id,
       (req as { user: { id: string } }).user.id,
@@ -83,6 +90,38 @@ export class AdminController {
   @Get('users')
   async listUsers(@Query() query: ListUsersQueryDto) {
     return this.adminService.listUsers(query);
+  }
+
+  @Get('creator-events/verified-addresses')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(120)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List all verified addresses for creator events' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of verified addresses',
+  })
+  async listVerifiedAddresses(@Query() query: ListVerifiedAddressesQueryDto) {
+    return this.adminService.listVerifiedAddresses(query);
+  }
+
+  @Get('creator-events/moderate')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(60)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get all events for moderation with filtering and pagination',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of events with moderation data',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  async listCreatorEventsForModeration(
+    @Query() query: ListCreatorEventsQueryDto,
+  ) {
+    return this.adminService.listCreatorEventsForModeration(query);
   }
 
   @Patch('users/:id/ban')
@@ -194,7 +233,7 @@ export class AdminController {
   @ApiResponse({ status: 400, description: 'Invalid date range' })
   async getActivityReport(
     @Query() query: ReportQueryDto,
-    @ExpressResponse() res: Response,
+    @Res() res: Response,
   ): Promise<void> {
     const result = await this.adminService.getActivityReport(query);
 
